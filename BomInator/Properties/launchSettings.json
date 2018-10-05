@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "BomInator": {
+      "commandName": "Project",
+      "commandLineArgs": "-d=g:\\BomInator\\TestFiles -p=*.cs"
+    }
+  }
+}
