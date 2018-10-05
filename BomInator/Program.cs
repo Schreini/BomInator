@@ -22,9 +22,11 @@ namespace BomInator
         //-d=g:\BomInator\TestFiles -p=*.cs
         static void Main(string[] args)
         {
+            IBomInatorService bomService = new BomInatorService();
+
             var arguments = ParseArguments(args);
             IEnumerable<FileInfo> files = FindFiles(arguments.Directory, arguments.FileNamePattern);
-            var bom = Encoding.UTF8.GetPreamble();
+
             byte[] fileBytes = new byte[0];
 
             var bomFiles = files.Select(f => new BomFile() { FileInfo = f });
@@ -36,24 +38,19 @@ namespace BomInator
                 {
                     fs.Read(fileBytes, 0, Convert.ToInt32(file.Length));
 
-                    var b = new byte[bom.Length];
-                    Array.Copy(fileBytes, b, b.Length);
-                    if (bom.SequenceEqual(b))
+                    if (!bomService.NeedsBom(fileBytes))
                     {
-                        //Console.WriteLine($"match{file.FullName}");
                         continue;
                     }
-                    else
-                    {
-                        if (FindBytes(fileBytes, file.Length, AnsiBytes))
-                        {
-                            file.FoundEncodings.Add("iso-8859-1");
-                        }
 
-                        else if (FindBytes(fileBytes, file.Length, Utf8Bytes))
-                        {
-                            file.FoundEncodings.Add("utf-8");
-                        }
+                    if (FindBytes(fileBytes, file.Length, AnsiBytes))
+                    {
+                        file.FoundEncodings.Add("iso-8859-1");
+                    }
+
+                    else if (FindBytes(fileBytes, file.Length, Utf8Bytes))
+                    {
+                        file.FoundEncodings.Add("utf-8");
                     }
                 }
 
@@ -182,7 +179,8 @@ namespace BomInator
 
         public FileInfo FileInfo { get; set; }
         public IList<string> FoundEncodings { get; }
-        public long Length => FileInfo.Length;
+        public int Length => Convert.ToInt32(FileInfo.Length);
+        public long LongLength => FileInfo.Length;
         public string FullName => FileInfo.FullName;
 
         public FileStream OpenRead()
