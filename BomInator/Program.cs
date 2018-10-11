@@ -9,9 +9,10 @@ namespace BomInator
 {
     class Program
     {
-        protected internal static byte[][] AnsiBytes = new byte[][] { new byte[] { 228 }, new byte[] { 246 }, new byte[] { 252 }, new byte[] { 223 } };
+        private static CommandLineArgments Args;
+        private static readonly byte[][] AnsiBytes = new byte[][] { new byte[] { 228 }, new byte[] { 246 }, new byte[] { 252 }, new byte[] { 223 } };
 
-        protected internal static byte[][] Utf8Bytes = new byte[][]
+        private static readonly byte[][] Utf8Bytes = new byte[][]
         {
             new byte[] {195,164},
             new byte[] {195,182},
@@ -24,8 +25,8 @@ namespace BomInator
         {
             IBomInatorService bomService = new BomInatorService();
 
-            var arguments = ParseArguments(args);
-            IEnumerable<FileInfo> files = FindFiles(arguments.Directory, arguments.FileNamePattern);
+            Args = ParseArguments(args);
+            IEnumerable<FileInfo> files = FindFiles(Args.Directory, Args.FileNamePattern);
 
             byte[] fileBytes = new byte[0];
 
@@ -40,6 +41,7 @@ namespace BomInator
 
                     if (!bomService.NeedsBom(fileBytes))
                     {
+                        PrintVerbose($"Has BOM    {file.FullName}");
                         continue;
                     }
 
@@ -60,8 +62,8 @@ namespace BomInator
                 }
                 else
                 {
-                    var mover = new FileInfo(file.FullName);
-                    mover.MoveTo(file.FullName + ".bak");
+                    PrintVerbose($"{file.FoundEncodings.FirstOrDefault(),-10} {file.FullName}");
+                    CreateBackup(file);
 
                     var inputEncoding = Encoding.GetEncoding(file.FoundEncodings.FirstOrDefault() ?? "iso-8859-1");
                     char[] chars = inputEncoding.GetChars(fileBytes, 0, Convert.ToInt32(file.Length));
@@ -75,6 +77,21 @@ namespace BomInator
                 }
             }
             Console.ReadLine();
+        }
+
+        private static void CreateBackup(BomFile file)
+        {
+            if (!Args.Backup) return;
+
+            var mover = new FileInfo(file.FullName);
+            mover.MoveTo(file.FullName + ".bak");
+        }
+
+        private static void PrintVerbose(string message)
+        {
+            if (!Args.Verbose) return;
+            
+            Console.WriteLine(message);
         }
 
         private static bool FindBytes(byte[] source, long len, IEnumerable<byte[]> bytesToFind)
@@ -115,20 +132,33 @@ namespace BomInator
                 .As('l', "listEncodings")
                 .WithDescription("Print a list of all possible encodings");
             parser
-                .MakeCaseInsensitive().Setup(a => a.Directory)
+                .MakeCaseInsensitive()
+                .Setup(a => a.Directory)
                 .As('d', "directory")
                 .WithDescription("Directory to be scanned")
                 .Required();
             parser
-                .MakeCaseInsensitive().Setup(a => a.FileNamePattern)
+                .MakeCaseInsensitive()
+                .Setup(a => a.FileNamePattern)
                 .As('p', "FileNamePattern")
                 .WithDescription(
                     "Comma separated list of Pattern to match Filenames. This parameter can contain a combination of valid literal path and wildcard (* and ?) characters, but it doesn't support regular expressions.")
                 .Required();
             parser
-                .MakeCaseInsensitive().Setup(a => a.OriginalEncoding)
+                .MakeCaseInsensitive()
+                .Setup(a => a.OriginalEncoding)
                 .As('e', "originalEncoding")
                 .WithDescription("");
+            parser
+                .MakeCaseInsensitive()
+                .Setup(a => a.Verbose)
+                .As("verbose")
+                .WithDescription("Print verbose output.");
+            parser
+                .MakeCaseInsensitive()
+                .Setup(a=> a.Backup)
+                .As('b', "backup")
+                .WithDescription("Create Backup Files.");
             ICommandLineParserResult result = parser.Parse(args);
 
             var arguments = parser.Object;
@@ -156,18 +186,24 @@ namespace BomInator
         private static IEnumerable<FileInfo> FindFiles(string directory, string pattern)
         {
             var dir = new DirectoryInfo(directory);
-            var files = dir.EnumerateFiles(pattern, SearchOption.AllDirectories);
+            var files = dir.EnumerateFiles(pattern, SearchOption.AllDirectories).OrderBy(f=>f.FullName);
             return files;
         }
     }
 
+    // ReSharper disable once ClassNeverInstantiated.Global
     internal class CommandLineArgments
     {
+        // ReSharper disable UnusedAutoPropertyAccessor.Global
         public bool ListEncodings { get; set; }
         public string Directory { get; set; }
         public string FileNamePattern { get; set; }
         public string OriginalEncoding { get; set; }
         public bool Validate { get; set; }
+        public bool Verbose { get; set; }
+        public bool Backup { get; set; }
+
+        // ReSharper restore UnusedAutoPropertyAccessor.Global
     }
 
     internal class BomFile

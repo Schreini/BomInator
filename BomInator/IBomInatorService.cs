@@ -1,5 +1,4 @@
 ﻿using System;
-using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -13,8 +12,8 @@ namespace BomInator
 
     public class BomInatorService : IBomInatorService
     {
-        public Encoding TargetEncoding => Encoding.UTF8;
-        public byte[] Bom => TargetEncoding.GetPreamble();
+        private Encoding TargetEncoding => Encoding.UTF8;
+        private byte[] Bom => TargetEncoding.GetPreamble();
 
         public bool NeedsBom(byte[] input)
         {
@@ -23,12 +22,7 @@ namespace BomInator
             var inputBom = new byte[Bom.Length];  // todo: use field for memory optimization?
             Array.Copy(input, inputBom, Bom.Length);
 
-            if (Bom.SequenceEqual(inputBom))
-            {
-                return false;
-            }
-
-            return true;
+            return !Bom.SequenceEqual(inputBom);
         }
     }
 }
