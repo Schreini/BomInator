@@ -11,7 +11,7 @@ namespace BomInator
     {
         private static CommandLineArgments Args;
         private static readonly byte[][] AnsiBytes = new byte[][] { new byte[] { 228 }, new byte[] { 246 }, new byte[] { 252 }, new byte[] { 223 } };
-
+        private static readonly byte[] ValidAnsiBytes = new byte[] {10, 13, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126};
         private static readonly byte[][] Utf8Bytes = new byte[][]
         {
             new byte[] {195,164},
@@ -27,6 +27,12 @@ namespace BomInator
 
             Args = ParseArguments(args);
             IEnumerable<FileInfo> files = FindFiles(Args.Directory, Args.FileNamePattern);
+
+            if (Args.Analyze)
+            {
+                Analyze(files);
+                Exit();
+            }
 
             byte[] fileBytes = new byte[0];
 
@@ -48,6 +54,15 @@ namespace BomInator
                     if (FindBytes(fileBytes, file.Length, AnsiBytes))
                     {
                         file.FoundEncodings.Add("iso-8859-1");
+                        
+                        var invalidBytes = ValidateAllAnsiBytes(fileBytes, file.Length, ValidAnsiBytes);
+                        var bytes = invalidBytes.ToList();
+                        if (bytes.Any())
+                        {
+                            IEnumerable<string> enumerable = bytes.Select(b => b + ":" + Convert.ToChar(b));
+
+                            file.FoundEncodings.Add("invalid: " + string.Join("; ", enumerable) );
+                        }
                     }
 
                     else if (FindBytes(fileBytes, file.Length, Utf8Bytes))
@@ -59,6 +74,10 @@ namespace BomInator
                 if (file.FoundEncodings.Count > 1)
                 {
                     Console.WriteLine("multiencodings " + file.FullName);
+                    foreach (var fileFoundEncoding in file.FoundEncodings)
+                    {
+                        Console.WriteLine(fileFoundEncoding);
+                    }
                 }
                 else
                 {
@@ -76,7 +95,44 @@ namespace BomInator
 
                 }
             }
+
             Console.ReadLine();
+        }
+
+        private static void Analyze(IEnumerable<FileInfo> files)
+        {
+            var analyzer = new EncodingAnalyzer();
+            foreach (var fileInfo in files)
+            {
+                using (var s = fileInfo.OpenRead())
+                {
+                    byte[] bytes = new byte[s.Length];
+                    s.Read(bytes);
+                    var encoding = analyzer.Analyze(bytes);
+                    if (Args.Ignore == null || encoding.EncodingName != Args.Ignore)
+                    {
+                        Console.WriteLine($"{encoding.EncodingName,-30} {fileInfo.FullName}");
+                    }
+                }
+            }
+        }
+
+        private static IEnumerable<byte> ValidateAllAnsiBytes(byte[] fileBytes, int fileLength, byte[] validAnsiBytes)
+        {
+            var invalidBytes = new List<byte>();
+
+            for(int i = 0; i < fileLength; i++)
+            {
+                if (validAnsiBytes.Contains(fileBytes[i]))
+                    continue;
+                foreach (var ansiByte in AnsiBytes)
+                {
+                    if (!ansiByte.Contains(fileBytes[i]))
+                        invalidBytes.Add(fileBytes[i]);
+                }
+            }
+
+            return invalidBytes;
         }
 
         private static void CreateBackup(BomFile file)
@@ -125,7 +181,11 @@ namespace BomInator
             var parser = new FluentCommandLineParser<CommandLineArgments>();
             parser
                 .SetupHelp("?", "h", "help")
-                .Callback(help => Console.WriteLine(help));
+                .Callback(help =>
+                {
+                    Console.WriteLine(help);
+                    Exit();
+                });
             parser
                 .MakeCaseInsensitive()
                 .Setup(a => a.ListEncodings)
@@ -159,7 +219,18 @@ namespace BomInator
                 .Setup(a=> a.Backup)
                 .As('b', "backup")
                 .WithDescription("Create Backup Files.");
-            ICommandLineParserResult result = parser.Parse(args);
+            parser
+                .MakeCaseInsensitive()
+                .Setup(a => a.Analyze)
+                .As('a', "analyze")
+                .WithDescription("Only analyze files and print encodings per file.");
+            parser
+                .MakeCaseInsensitive()
+                .Setup(a => a.Ignore)
+                .As('i', "ignore")
+                .WithDescription("Only analyze files and print encodings per file.");
+
+           ICommandLineParserResult result = parser.Parse(args);
 
             var arguments = parser.Object;
             if (arguments.ListEncodings)
@@ -168,7 +239,7 @@ namespace BomInator
                 Exit();
             }
 
-            if (result.HelpCalled || result.HasErrors)
+            if (result.HasErrors)
             {
                 parser.HelpOption.ShowHelp(parser.Options);
                 Exit();
@@ -185,9 +256,16 @@ namespace BomInator
 
         private static IEnumerable<FileInfo> FindFiles(string directory, string pattern)
         {
+            var splits = pattern.Split(',', StringSplitOptions.RemoveEmptyEntries);
             var dir = new DirectoryInfo(directory);
-            var files = dir.EnumerateFiles(pattern, SearchOption.AllDirectories).OrderBy(f=>f.FullName);
-            return files;
+            foreach (var singlePattern in splits)
+            {
+                var files = dir.EnumerateFiles(singlePattern, SearchOption.AllDirectories).OrderBy(f=>f.FullName);
+                foreach (var fileInfo in files)
+                {
+                    yield return fileInfo;
+                }
+            }
         }
     }
 
@@ -202,6 +280,8 @@ namespace BomInator
         public bool Validate { get; set; }
         public bool Verbose { get; set; }
         public bool Backup { get; set; }
+        public bool Analyze { get; set; }
+        public string Ignore { get; set; }
 
         // ReSharper restore UnusedAutoPropertyAccessor.Global
     }

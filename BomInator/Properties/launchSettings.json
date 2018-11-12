@@ -2,7 +2,7 @@
   "profiles": {
     "BomInator": {
       "commandName": "Project",
-      "commandLineArgs": "-d=g:\\BomInator\\TestFiles -p=*.cs"
+      "commandLineArgs": "-d=g:\\qualifood -p=*.sql --analyze --ignore \"Unicode (UTF-8)\""
     }
   }
 }
